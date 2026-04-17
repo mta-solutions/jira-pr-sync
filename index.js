@@ -50,12 +50,14 @@ module.exports = async ({ github, context, core }) => {
     }
   }
 
+  const DEFAULT_PROJECT_KEY = 'SOF';
+
   function getJiraProjectKey(labels) {
     for (const label of labels) {
       const match = label.name.match(/^jira:([A-Z][A-Z0-9]+)$/);
       if (match) return match[1];
     }
-    return null;
+    return DEFAULT_PROJECT_KEY;
   }
 
   async function findLinkedIssueKey(prNumber) {
@@ -90,10 +92,6 @@ module.exports = async ({ github, context, core }) => {
   // ▸ PR opened or labeled with jira:PROJ → create Jira task
   if (event === 'pull_request' && (action === 'opened' || action === 'labeled')) {
     const projectKey = getJiraProjectKey(pr.labels);
-    if (!projectKey) {
-      core.info('No jira: label found — skipping');
-      return;
-    }
 
     const existing = await findLinkedIssueKey(pr.number);
     if (existing) {
