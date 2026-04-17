@@ -8,8 +8,10 @@ Each repo has a thin GitHub Actions workflow (`.github/workflows/jira-pr-sync.ym
 
 | PR Event | Jira Action |
 |---|---|
+| PR title contains `[PROJ-123]` | Creates a new task and links it to the existing Jira issue |
+| PR title contains `[PROJ]` | Uses `PROJ` as the Jira project key (overrides label) |
 | PR labeled with `jira:PROJ` | Creates a Task in project `PROJ`, assigns to PR author |
-| PR review submitted | Creates a linked Task for the review, assigns to reviewer |
+| PR review submitted | Creates a linked Task (labeled `pr-review`) for the review, assigns to reviewer |
 | PR review dismissed | Closes the review's Jira task |
 | PR merged | Transitions parent Jira task to **Done** |
 | PR closed (no merge) | Transitions parent Jira task to **Canceled** |

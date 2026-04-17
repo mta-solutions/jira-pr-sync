@@ -52,12 +52,36 @@ module.exports = async ({ github, context, core }) => {
 
   const DEFAULT_PROJECT_KEY = 'SOF';
 
-  function getJiraProjectKey(labels) {
+  function extractIssueKeyFromTitle(title) {
+    const match = title.match(/\[([A-Z][A-Z0-9]*-\d+)\]/);
+    return match ? match[1] : null;
+  }
+
+  function extractProjectKeyFromTitle(title) {
+    const match = title.match(/\[([A-Z][A-Z0-9]+)\]/);
+    return match ? match[1] : null;
+  }
+
+  function getJiraProjectKey(title, labels) {
+    // 1. [PROJ-123] in title → derive project  2. [PROJ] in title  3. jira:PROJ label  4. default SOF
+    const issueKey = extractIssueKeyFromTitle(title);
+    if (issueKey) return issueKey.split('-')[0];
+    const titleKey = extractProjectKeyFromTitle(title);
+    if (titleKey) return titleKey;
     for (const label of labels) {
       const match = label.name.match(/^jira:([A-Z][A-Z0-9]+)$/);
       if (match) return match[1];
     }
     return DEFAULT_PROJECT_KEY;
+  }
+
+  async function jiraIssueExists(issueKey) {
+    try {
+      await jiraApi('GET', `/issue/${issueKey}?fields=summary`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function findLinkedIssueKey(prNumber) {
@@ -91,7 +115,7 @@ module.exports = async ({ github, context, core }) => {
 
   // ▸ PR opened or labeled with jira:PROJ → create Jira task
   if (event === 'pull_request' && (action === 'opened' || action === 'labeled')) {
-    const projectKey = getJiraProjectKey(pr.labels);
+    const projectKey = getJiraProjectKey(pr.title, pr.labels);
 
     const existing = await findLinkedIssueKey(pr.number);
     if (existing) {
@@ -99,6 +123,7 @@ module.exports = async ({ github, context, core }) => {
       return;
     }
 
+    const titleIssueKey = extractIssueKeyFromTitle(pr.title);
     const assigneeId = await findJiraAccountId(pr.user.login);
 
     const issue = await jiraApi('POST', '/issue', {
@@ -138,6 +163,16 @@ module.exports = async ({ github, context, core }) => {
     });
 
     await transitionIssue(issue.key, 'In Progress');
+
+    // If PR title references an existing Jira issue, link the new task to it
+    if (titleIssueKey && await jiraIssueExists(titleIssueKey)) {
+      await jiraApi('POST', '/issueLink', {
+        type: { name: 'Relates' },
+        inwardIssue: { key: titleIssueKey },
+        outwardIssue: { key: issue.key },
+      });
+      core.info(`Linked ${issue.key} to existing issue ${titleIssueKey}`);
+    }
 
     await github.rest.issues.createComment({
       owner: context.repo.owner,
@@ -204,6 +239,7 @@ module.exports = async ({ github, context, core }) => {
           }],
         },
         issuetype: { name: 'Task' },
+        labels: ['pr-review'],
         ...(reviewerAccountId && { assignee: { accountId: reviewerAccountId } }),
       },
     });
