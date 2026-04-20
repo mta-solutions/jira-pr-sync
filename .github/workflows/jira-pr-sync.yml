@@ -2,9 +2,13 @@ name: Jira PR Sync
 
 on:
   pull_request:
-    types: [opened, closed, labeled, unlabeled]
+    types: [opened, closed]
   pull_request_review:
     types: [submitted, dismissed]
+
+concurrency:
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 permissions:
   pull-requests: write
@@ -19,7 +23,7 @@ jobs:
   jira-sync:
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'labeled'))
+      (github.event_name == 'pull_request' && github.event.action == 'opened')
       || (github.event_name == 'pull_request' && github.event.action == 'closed')
       || github.event_name == 'pull_request_review'
 
