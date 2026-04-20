@@ -113,8 +113,8 @@ module.exports = async ({ github, context, core }) => {
   const action = context.payload.action;
   const pr = context.payload.pull_request;
 
-  // ▸ PR opened or labeled with jira:PROJ → create Jira task
-  if (event === 'pull_request' && (action === 'opened' || action === 'labeled')) {
+  // ▸ PR opened → create Jira task
+  if (event === 'pull_request' && action === 'opened') {
     const projectKey = getJiraProjectKey(pr.title, pr.labels);
 
     const existing = await findLinkedIssueKey(pr.number);
@@ -203,9 +203,15 @@ module.exports = async ({ github, context, core }) => {
     }
   }
 
-  // ▸ PR review submitted → create linked review issue
+  // ▸ PR review approved → create linked review issue
   if (event === 'pull_request_review' && action === 'submitted') {
     const review = context.payload.review;
+
+    if (review.state !== 'approved') {
+      core.info(`Review state is "${review.state}" — only approvals create Jira tasks`);
+      return;
+    }
+
     const prNumber = pr.number;
 
     const issueKey = await findLinkedIssueKey(prNumber);
@@ -217,16 +223,10 @@ module.exports = async ({ github, context, core }) => {
     const projectKey = issueKey.split('-')[0];
     const reviewerAccountId = await findJiraAccountId(review.user.login);
 
-    const stateLabel = {
-      approved: '✅ Approved',
-      changes_requested: '🔄 Changes Requested',
-      commented: '💬 Commented',
-    }[review.state] || review.state;
-
     const reviewIssue = await jiraApi('POST', '/issue', {
       fields: {
         project: { key: projectKey },
-        summary: `[Review] ${stateLabel} by ${review.user.login} on PR #${prNumber}`,
+        summary: `[Review] ✅ Approved by ${review.user.login} on PR #${prNumber}`,
         description: {
           type: 'doc',
           version: 1,
@@ -266,9 +266,7 @@ module.exports = async ({ github, context, core }) => {
       },
     });
 
-    if (review.state === 'approved') {
-      await transitionIssue(reviewIssue.key, 'Done');
-    }
+    await transitionIssue(reviewIssue.key, 'Done');
   }
 
   // ▸ PR review dismissed → find and close the review issue
